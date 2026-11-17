@@ -39,7 +39,10 @@ Default — stdio: клиент запускает процесс и общае�
 Используйте абсолютный путь: cwd клиента может отличаться. Не используйте
 `npm start` как stdio-команду клиента: служебный вывод npm может попасть
 в протокольный stdout. Сам сервер пишет диагностику только в stderr.
-Закрытие stdin, SIGINT/SIGTERM закрывают соединения и отменяют HTTP-запросы.
+Закрытие stdin (EOF) закрывает соединения и отменяет HTTP-запросы на всех
+платформах. В Linux/macOS это также делают обработчики SIGINT/SIGTERM.
+В Windows вызов Node.js `child.kill('SIGTERM')` принудительно завершает процесс
+без вызова JavaScript-обработчика; для штатной остановки stdio закройте stdin.
 Остановка MCP не останавливает ZCAD.
 
 Streamable HTTP:
@@ -128,6 +131,13 @@ MCP (оба транспорта/режима протокола) → adapter �
 refusal, HTTP 500, invalid JSON/UTF-8/envelope/ID, header/body timeout, chunked
 ответы/bounds, cancel/shutdown. Это не тест GUI ZCAD. `npm test` использует
 уже собранный dist; после изменения TypeScript запускайте `npm run verify`.
+
+Lifecycle-тест отдельно проверяет EOF, SIGTERM и ошибочную конфигурацию.
+Для EOF ожидаются код `0` и отсутствие сигнала на всех платформах; для
+SIGTERM — то же в Linux/macOS, а в Windows — код `null` и сигнал `SIGTERM`,
+как описано в [документации Node.js](https://nodejs.org/download/release/v24.13.1/docs/api/process.html#signal-events).
+Прежнее ожидание кода `0` после `child.kill('SIGTERM')` вызывало ложную ошибку
+`null !== 0` в `npm run verify` на Windows.
 
 Сценарий для **живого ZCAD**, запускаемого владельцем:
 

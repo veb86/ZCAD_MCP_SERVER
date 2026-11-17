@@ -1,5 +1,53 @@
 # Verification evidence
 
+## Issue #3: Windows lifecycle assertion
+
+The report uses Windows 10 / Node.js 24.13.1. The original test treated EOF and
+`child.kill('SIGTERM')` as normal zero-code exits. On Windows, Node terminates
+the child forcibly and emits `exit` with `[null, 'SIGTERM']`; JavaScript signal
+handlers do not run. The assertion at the original integration test line 162
+therefore failed even though the process terminated as requested. See the
+[Node 24.13.1 signal documentation](https://nodejs.org/download/release/v24.13.1/docs/api/process.html#signal-events).
+
+The test now checks both code and signal, with individually named subtests:
+
+| Stop condition | Linux/macOS expected `[code, signal]` | Windows expected `[code, signal]` |
+| --- | --- | --- |
+| stdin EOF | `[0, null]` | `[0, null]` |
+| `child.kill('SIGTERM')` | `[0, null]` | `[null, 'SIGTERM']` |
+| Invalid configuration | `[1, null]` | `[1, null]` |
+
+All startup handshakes, failure cleanup, time bounds and secret-redaction
+checks remain. The invalid-configuration test waits for `close` so stderr has
+finished before checking it. Application/SDK code does not need a change.
+
+Verification on Linux / Node 26.13.0, 2026-11-17:
+
+- Original focused lifecycle test: passes on Linux, confirming the OS-specific
+  expectation mismatch.
+- Original test with the bounded Windows signal simulation: fails at line 162
+  with `AssertionError`, actual `null`, expected `0`, reproducing the report.
+- Fixed lifecycle test with the same simulation: all 3 subtests pass.
+- `npm run verify`: TypeScript build and **30 tests pass**, 0 failures or skips
+  (27 top-level tests, including the 3 named lifecycle subtests), ~6 seconds.
+- No native Windows environment is available here. The simulation verifies the
+  assertion against forced termination and the documented Windows exit tuple;
+  it does not claim native Windows verification. No CI workflows/checks exist.
+
+To reproduce on Windows, run `npm ci` and `npm run verify`. To exercise the
+Windows assertion on Linux without additional runtimes, after building run:
+
+```bash
+node --import ./experiments/windows-sigterm.mjs --test --test-timeout=15000 --test-name-pattern='stdio lifecycle' tests/integration.test.mjs
+```
+
+The preloader affects only that test process: it forces SIGKILL instead of
+SIGTERM, reports the requested SIGTERM in child exit events, and selects the
+Windows expectation. The real CLI child still performs an MCP initialize
+handshake before termination. Use EOF for graceful stdio shutdown on Windows.
+
+## Original issue #1 verification
+
 2026-11-17, Node v26.13.0 / npm 11.20.0, Linux. Commands run sequentially;
 no ZCAD build or unbounded stress tests. Dependency install: 21 packages,
 `npm install --no-fund`, audit reported zero vulnerabilities.

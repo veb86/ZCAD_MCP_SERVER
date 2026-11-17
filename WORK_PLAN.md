@@ -1,58 +1,57 @@
-# Issue #1 work plan
+# Issue #3 work plan
 
-Objective: implement and verify all requirements in issue #1 in PR #2, without
-changing ZCAD or its SDK. Keep genuinely blocked acceptance criteria unfinished.
+Objective: fully implement and verify issue #3 in PR #4. Fix the Windows
+`npm run verify` failure without weakening lifecycle checks or removing features.
 
-## Plan and requirement inventory
+## Requirements and verification plan
 
-- [x] Read the complete issue, comments, sub-issues and all three PR feedback types
-  (none present on 2026-11-17); inspect repository guidance and recent related work.
-- [x] Analyze the actual HTTP handlers at a pinned upstream revision; document
-  usable routes, command registration, execution, results and limitations (§4).
-- [x] Build an independent TypeScript app using the official SDK as dependencies,
-  with extensible tool registration and lifecycle management (§2, §3.1–3.2).
-- [x] Implement a transport-only HTTP adapter: configurable target and headers,
-  parameter encoding, response conversion, connection/status/format errors,
-  deadlines, bounded large/chunked responses and cancellation (§3.3, §6).
-- [x] Configure ZCAD address/port, connection options, timeouts and MCP transport
-  externally, with validation and no recompilation (§5).
-- [x] Expose existing HTTP capabilities without implementing CAD operations or
-  inventing unsupported ZCAD routes (§3.2, §6).
-- [x] Supply a separate HTTPServer change specification for approval covering
-  problems, architecture, routes/formats, execution/results, queues, concurrency,
-  deadlines, errors, affected modules and acceptance (§4). Make no upstream edits.
-- [x] Add focused automated SDK-client → MCP → adapter → HTTP fixture tests,
-  including connection, timeout, malformed-response and lifecycle failures (§7).
-- [x] Provide and attempt the live-ZCAD smoke scenario; preserve failure evidence.
-- [ ] Verify a successful round trip against real ZCAD (§7.5). No runtime or
-  endpoint is available; the attempt returned CONNECTION_ERROR. A fixture alone
-  does not verify this criterion.
-- [x] Write installation, configuration, startup, client and extension docs (§8).
-- [x] Run focused checks, review the entire PR diff, commit atomic steps, push
-  only the prepared branch, synchronize upstream main and update PR #2.
-- [x] Check current-head CI (preserve and inspect failure logs if any), refresh
-  feedback, mark PR ready when implementation is finished, keep it unmerged.
+- [x] Read issue #3, every comment and required sub-issue, PR #4 conversation,
+  inline comments and reviews, repository guidance and latest merged PR #2.
+  No comments, reviews, sub-issues or AGENTS.md apply.
+- [x] Verify the prepared branch and upstream main ancestry; inspect lifecycle
+  implementation, tests and documented Node.js Windows signal behavior.
+- [x] Reproduce the incorrect zero-code assertion with the reported Windows exit
+  tuple and run the original focused test on the available Linux host.
+- [x] Correct lifecycle expectations: EOF must exit normally on all platforms;
+  SIGTERM must exit normally on POSIX and report forced termination on Windows;
+  invalid configuration must still fail without leaking its value.
+- [x] Keep automated regression checks for exact exit code and signal, useful
+  failure diagnostics, finite child lifetimes and complete child cleanup.
+- [x] Explain the root cause and Windows graceful-stop option in README.
+- [x] Run focused checks and `npm run verify` with logs saved to files. Record
+  platform/version limits honestly; do not claim a native Windows run on Linux.
+- [x] Review the full PR diff and refresh all feedback; commit atomic changes,
+  push only issue-3-e7c41f4fd3bf, update PR #4 with reproduction and test evidence,
+  retain `Fixes #3`, confirm clean status and upstream main ancestry, mark ready.
 
-## Verification strategy
+## Investigation and evidence
 
-Use Node's test runner with finite local HTTP fixtures and the official SDK
-client, sequentially and with short test deadlines. Typecheck/build the small
-TypeScript app once code and tests are drafted. No ZCAD build or stress tests.
-Record commands, results and any blocked criterion here and in the PR.
+Issue reports Windows 10 / Node.js 24.13.1; only lifecycle assertion fails:
+`tests/integration.test.mjs:162`, actual `null`, expected `0`.
+Node's official child-process/process documentation specifies that Windows
+`child.kill('SIGTERM')` terminates unconditionally, yielding a null exit code
+and SIGTERM signal. It does not invoke the application's JavaScript handler.
+The original test asserted zero for both EOF and SIGTERM, ignoring the signal.
 
-## Current verification
+No release workflows, other Actions workflows or PR checks exist in either
+upstream or fork. No package release trigger/version change is necessary.
+CI addition was not requested; owner may consider
+https://github.com/link-assistant/hive-mind/blob/main/docs/CI-CD-BEST-PRACTICES.md.
 
-`npm run verify`: build and 27 tests passed (Node 26.13.0, ~6 seconds).
-`npm run smoke`: exited 1; SDK connection/discovery succeeded, GET /ipc failed
-with CONNECTION_ERROR. No ZCAD runtime/endpoint is available. Live criterion
-§7.5 remains unfinished. See [requirement/evidence map](docs/verification.md).
+## Results
 
-Upstream spec is submitted for approval as part of PR #2; implementing that
-separate work is explicitly not authorized by issue #1 before approval.
+Linux / Node 26.13.0: original focused lifecycle check passed. The bounded
+simulation in experiments/windows-sigterm.mjs reproduced the original line-162
+`null !== 0` failure; the corrected test passed all three lifecycle subtests
+under the same simulation. `npm run verify`: build + 30 tests passed, no skips
+or failures (~6 seconds). No native Windows execution is claimed.
 
-Final review: all issue comments, sub-issues, PR conversation/inline comments
-and reviews are empty. The PR diff preserves the original repository's scope;
-there were no existing application features. Upstream main is an ancestor of
-this branch. No Actions runs or PR checks exist, so no CI pass is claimed.
-PR #2 now has its final title, implementation/test/blocked-criterion description,
-and positive `Closes #1` reference; it is ready for review and remains unmerged.
+Logs: /tmp/issue-3-{npm-ci,baseline-build,baseline-lifecycle,windows-before,
+windows-after,verify}.log. See docs/verification.md for permanent evidence,
+expected exit tuples and repeatable automated verification commands.
+
+Final review: all issue/PR feedback and sub-issues remain empty. The complete
+PR diff was reviewed; application behavior and existing features are preserved.
+Upstream main is an ancestor of this branch. PR #4 has its final title, cause,
+reproduction, automated-check commands, evidence and positive `Fixes #3`
+reference. It is ready for review and remains unmerged. No CI runs/checks exist.

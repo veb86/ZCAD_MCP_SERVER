@@ -139,7 +139,7 @@ test('tool registry can be extended without changing transports', { timeout: 300
   assert.equal((await client.callTool({ name: 'custom' })).content[0].text, 'custom-result');
 });
 
-test('stdio exits on EOF and SIGTERM; invalid configuration exits nonzero', { timeout: 5000 }, async (t) => {
+test('stdio lifecycle: EOF, SIGTERM and invalid configuration', { timeout: 5000 }, async (t) => {
   const children = [];
   t.after(async () => {
     for (const child of children) {
@@ -151,22 +151,29 @@ test('stdio exits on EOF and SIGTERM; invalid configuration exits nonzero', { ti
     }
   });
   for (const signal of [undefined, 'SIGTERM']) {
-    const child = spawn(process.execPath, ['dist/cli.js'], { env: { ...process.env, MCP_TRANSPORT: 'stdio' }, stdio: ['pipe', 'pipe', 'pipe'] });
-    children.push(child);
-    // Complete one request to prove startup before terminating.
-    const response = once(child.stdout, 'data');
-    child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'test', version: '1' } } }) + '\n');
-    await response;
-    const exited = once(child, 'exit');
-    if (signal) child.kill(signal); else child.stdin.end();
-    assert.equal((await exited)[0], 0);
+    await t.test(signal ?? 'EOF', async () => {
+      const child = spawn(process.execPath, ['dist/cli.js'], { env: { ...process.env, MCP_TRANSPORT: 'stdio' }, stdio: ['pipe', 'pipe', 'pipe'] });
+      children.push(child);
+      // Complete one request to prove startup before terminating.
+      const response = once(child.stdout, 'data');
+      child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'test', version: '1' } } }) + '\n');
+      await response;
+      const exited = once(child, 'exit');
+      if (signal) child.kill(signal); else child.stdin.end();
+      // Windows child.kill() forcibly terminates the process without running its
+      // JavaScript signal handler. EOF remains a graceful stop on every platform.
+      const expected = signal && process.platform === 'win32' ? [null, signal] : [0, null];
+      assert.deepEqual(await exited, expected);
+    });
   }
-  const invalid = spawn(process.execPath, ['dist/cli.js'], { env: { ...process.env, MCP_TRANSPORT: 'invalid-secret' }, stdio: ['ignore', 'pipe', 'pipe'] });
-  children.push(invalid);
-  let stderr = '';
-  invalid.stderr.on('data', (chunk) => { stderr += chunk; });
-  assert.equal((await once(invalid, 'exit'))[0], 1);
-  assert.doesNotMatch(stderr, /invalid-secret/);
+  await t.test('invalid configuration', async () => {
+    const invalid = spawn(process.execPath, ['dist/cli.js'], { env: { ...process.env, MCP_TRANSPORT: 'invalid-secret' }, stdio: ['ignore', 'pipe', 'pipe'] });
+    children.push(invalid);
+    let stderr = '';
+    invalid.stderr.on('data', (chunk) => { stderr += chunk; });
+    assert.deepEqual(await once(invalid, 'close'), [1, null]);
+    assert.doesNotMatch(stderr, /invalid-secret/);
+  });
 });
 
 test('MCP reports connection refusal as a tool error', { timeout: 3000 }, async (t) => {
